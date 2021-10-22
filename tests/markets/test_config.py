@@ -5,8 +5,14 @@ OI_CAP = 800000
 AMOUNT_IN = 1e18
 
 
-def test_balances(token, gov, rewards, alice, bob, feed_owner):
-    assert token.totalSupply() == token.balanceOf(bob) + token.balanceOf(alice)
+def test_balances(token, gov, rewards, alice, bob, carol, dave, feed_owner):
+    balance_alice = token.balanceOf(alice)
+    balance_bob = token.balanceOf(bob)
+    balance_carol = token.balanceOf(carol)
+    balance_dave = token.balanceOf(dave)
+
+    assert token.totalSupply() == (
+        balance_alice + balance_bob + balance_carol + balance_dave)
     assert token.balanceOf(gov) == 0
     assert token.balanceOf(rewards) == 0
     assert token.balanceOf(feed_owner) == 0

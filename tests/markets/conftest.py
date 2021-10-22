@@ -59,31 +59,50 @@ def bob(accounts):
 
 
 @pytest.fixture(scope="module")
-def feed_owner(accounts):
-    yield accounts[6]
-
-
-@pytest.fixture(scope="module")
-def fees(accounts):
+def carol(accounts):
     yield accounts[4]
 
 
 @pytest.fixture(scope="module")
-def create_token(gov, alice, bob):
+def dave(accounts):
+    yield accounts[5]
+
+
+@pytest.fixture(scope="module")
+def fees(accounts):
+    yield accounts[6]
+
+
+@pytest.fixture(scope="module")
+def notamarket(accounts):
+    yield accounts[7]
+
+
+@pytest.fixture(scope="module")
+def feed_owner(accounts):
+    yield accounts[8]
+
+
+@pytest.fixture(scope="module")
+def create_token(gov, alice, bob, carol, dave):
     sup = TOKEN_TOTAL_SUPPLY
 
     def create_token(supply=sup):
         tok = gov.deploy(OverlayToken)
         tok.mint(gov, supply, {"from": gov})
-        tok.transfer(bob, supply/2, {"from": gov})
-        tok.transfer(alice, supply/2, {"from": gov}) 
+        tok.transfer(alice, supply/4, {"from": gov})
+        tok.transfer(bob, supply/4, {"from": gov})
+        tok.transfer(carol, supply/4, {"from": gov})
+        tok.transfer(dave, supply/4, {"from": gov})
         return tok
 
     yield create_token
 
+
 @pytest.fixture(scope="module")
 def token(create_token):
     yield create_token()
+
 
 @pytest.fixture(scope="module")
 def feed_infos():
@@ -92,21 +111,23 @@ def feed_infos():
     market_path = '../../feeds/univ3_dai_weth'
     depth_path = '../../feeds/univ3_axs_weth'
 
-    with open(os.path.normpath(os.path.join(base, market_path + '_raw_uni_framed.json'))) as f: 
+    with open(os.path.normpath(os.path.join(base, market_path + '_raw_uni_framed.json'))) as f:
         market_mock = json.load(f)
-    with open(os.path.normpath(os.path.join(base, market_path + '_reflected.json'))) as f: 
+    with open(os.path.normpath(os.path.join(base, market_path + '_reflected.json'))) as f:
         market_reflection = json.load(f)
-    with open(os.path.normpath(os.path.join(base, depth_path + '_raw_uni_framed.json'))) as f: 
+    with open(os.path.normpath(os.path.join(base, depth_path + '_raw_uni_framed.json'))) as f:
         depth_mock = json.load(f)
-    with open(os.path.normpath(os.path.join(base, depth_path + '_reflected.json'))) as f: 
+    with open(os.path.normpath(os.path.join(base, depth_path + '_reflected.json'))) as f:
         depth_reflection = json.load(f)
-        
+
     class FeedSmuggler:
         def __init__(self, market_info, depth_info):
             self.market_info = market_info
             self.depth_info = depth_info
+
         def market_info(self):
             return self.market_info
+
         def depth_info(self):
             return self.depth_info
 
@@ -134,13 +155,14 @@ def get_uni_feeds(feed_owner, feed_info):
     depth_token1 = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
 
     # TODO: place token0 and token1 into the json
-    uniswapv3_factory.createPool( market_token0, market_token1 )
-    uniswapv3_factory.createPool( depth_token0, depth_token1 )
+    uniswapv3_factory.createPool(market_token0, market_token1)
+    uniswapv3_factory.createPool(depth_token0, depth_token1)
 
     market_mock = IUniswapV3OracleMock(uniswapv3_factory.allPools(0))
     depth_mock = IUniswapV3OracleMock(uniswapv3_factory.allPools(1))
 
-    market_mock.loadObservations(market_obs, market_shims, {'from': feed_owner})
+    market_mock.loadObservations(
+        market_obs, market_shims, {'from': feed_owner})
 
     depth_mock.loadObservations(depth_obs, depth_shims, {'from': feed_owner})
 
@@ -148,23 +170,25 @@ def get_uni_feeds(feed_owner, feed_info):
 
     return uniswapv3_factory.address, market_mock.address, depth_mock.address, market_token1
 
+
 @pytest.fixture(scope="module")
 def comptroller(gov):
 
-    comptroller = gov.deploy(ComptrollerShim, 
-        IMPACT_WINDOW, 
-        LAMBDA,
-        STATIC_CAP, 
-        BRRRR_EXPECTED, 
-        BRRRR_WINDOW_MACRO,
-        BRRRR_WINDOW_MICRO
-    )
+    comptroller = gov.deploy(ComptrollerShim,
+                             IMPACT_WINDOW,
+                             LAMBDA,
+                             STATIC_CAP,
+                             BRRRR_EXPECTED,
+                             BRRRR_WINDOW_MACRO,
+                             BRRRR_WINDOW_MICRO
+                             )
 
     yield comptroller
 
+
 @pytest.fixture(
     scope="module",
-    params=[  
+    params=[
         ("OverlayV1Mothership", [
             .0015e18,      # fee
             .5e18,         # fee burn rate
@@ -224,12 +248,12 @@ def create_mothership(token, feed_infos, fees, alice, bob, gov, feed_owner, requ
         mothership.setOVL(tok, {'from': gov})
 
         market = gov.deploy(
-            ovlm_type, 
-            mothership, 
+            ovlm_type,
+            mothership,
             ovl_feed,
-            market_feed, 
-            quote, 
-            eth, 
+            market_feed,
+            quote,
+            eth,
             *ovlm_args[:3]
         )
 
@@ -273,16 +297,6 @@ def market(mothership, request):
     addr = mothership.allMarkets(0)
     market = getattr(interface, request.param)(addr)
     yield market
-
-
-@pytest.fixture(
-    scope="module",
-    params=["IOverlayV1Market"])
-def notamarket(accounts):
-    '''We need this because we cannot mutate the market object in tests (mutated state is inherited by all future tests :HORROR:)
-    And we cannot copy or deepcopy contract objects owing to RecursionError: maximum recursion depth exceeded while calling a Python object
-    '''
-    yield accounts[5]
 
 
 @pytest.fixture(scope="module")
