@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.7;
+pragma solidity 0.8.10;
 
 import "../libraries/FixedPoint.sol";
 
-contract OverlayV1OI {
+abstract contract OverlayV1OI {
 
     event log(string k , uint v);
 
@@ -11,7 +11,7 @@ contract OverlayV1OI {
 
     uint256 private constant ONE = 1e18;
 
-    uint256 public compoundingPeriod;
+    uint32 immutable public compoundingPeriod;
     uint256 public compounded;
 
     uint256 internal __oiLong__; // total long open interest
@@ -25,12 +25,10 @@ contract OverlayV1OI {
     event FundingPaid(uint oiLong, uint oiShort, int fundingPaid);
 
     constructor (
-        uint256 _compoundingPeriod
+        uint32 _compoundingPeriod
     ) {
 
         compoundingPeriod = _compoundingPeriod;
-
-        compounded = block.timestamp;
 
     }
 
@@ -39,40 +37,45 @@ contract OverlayV1OI {
     /// the last time funding was paid as well as the timestamp of the
     /// current compounding epoch, which come at regular intervals according
     /// to the compounding period.
+    /// @dev Called by `OverlayV1Market` function: `update`
     /// @param _now The timestamp of the current block.
     /// @param _compounded The last time compounding occurred.
     /// @return compoundings_ The number of compounding periods passed since
     /// the last time funding was compounded.
     /// @return tCompounding_ The current compounding epoch.
     function epochs (
-        uint _now,
-        uint _compounded
+        uint32 _now,
+        uint32 _compounded
     ) public view returns (
-        uint compoundings_,
-        uint tCompounding_
+        uint32 compoundings_,
+        uint32 tCompounding_
     ) {
 
-        uint _compoundPeriod = compoundingPeriod;
+        uint32 _compoundPeriod = compoundingPeriod;
 
         compoundings_ = ( _now - _compounded ) / _compoundPeriod;
 
-        tCompounding_ = _compounded + ( compoundings_ * _compoundPeriod );
+        tCompounding_ = _compounded + ( uint32(compoundings_) * _compoundPeriod );
 
     }
 
 
-    /// @notice Internal utility to pay funding from heavier to ligher side.
-    /// @dev Pure function accepting current open interest, compoundings
-    /// to perform, and funding constant.
-    /// @dev oiImbalance(period_m) = oiImbalance(period_now) * (1 - 2k) ** period_m
-    /// @param _oiLong Current open interest on the long side.
-    /// @param _oiShort Current open interest on the short side.
-    /// @param _epochs The number of compounding periods to compute for.
-    /// @param _k The funding constant.
-    /// @return oiLong_ Open interest on the long side after funding is paid.
-    /// @return oiShort_ Open interest on the short side after funding is paid.
-    /// @return fundingPaid_ Signed integer of funding paid, negative if longs
-    /// are paying shorts.
+    /**
+      @notice Internal utility to pay funding from heavier to lighter side.
+      @dev Pure function accepting current open interest, compoundings
+      @dev to perform, and funding constant.
+      @dev oiImbalance(period_m) = oiImbalance(period_now)*(1-2k)**period_m
+      @dev Called by internal function: payFunding
+      @dev Calls by FixedPoint contract function: mulDown
+      @param _oiLong Current open interest on the long side
+      @param _oiShort Current open interest on the short side
+      @param _epochs The number of compounding periods to compute for
+      @param _k The funding constant
+      @return oiLong_ Open interest on the long side after funding is paid
+      @return oiShort_ Open interest on the short side after funding is paid
+      @return fundingPaid_ Signed integer of funding paid, negative if longs
+      are paying shorts
+     */
     function computeFunding (
         uint256 _oiLong,
         uint256 _oiShort,
@@ -122,11 +125,16 @@ contract OverlayV1OI {
     }
 
 
-    /// @notice Pays funding.
-    /// @dev Invokes internal computeFunding and sets oiLong and oiShort.
-    /// @param _k The funding constant.
-    /// @param _epochs The number of compounding periods to compute.
-    /// @return fundingPaid_ Signed integer of how much funding was paid.
+    /**
+      @notice Pays funding.
+      @param _k The funding constant
+      @param _epochs The number of compounding periods to compute
+      @dev Invokes internal computeFunding and sets oiLong and oiShort
+      @dev Calls internal function: computeFunding
+      @dev Called by OverlayV1Market contract function: update
+      @dev Emits FundingPaid event
+      @return fundingPaid_ Signed integer of how much funding was paid
+     */
     function payFunding (
         uint256 _k,
         uint256 _epochs
@@ -137,6 +145,7 @@ contract OverlayV1OI {
         uint _oiLong;
         uint _oiShort;
 
+        // Calls internal function
         ( _oiLong, _oiShort, fundingPaid_ ) = computeFunding(
             __oiLong__,
             __oiShort__,
@@ -153,6 +162,7 @@ contract OverlayV1OI {
 
     /// @notice Adds open interest to one side
     /// @dev Adds open interest to one side, asserting the cap is not breached.
+    /// @dev Called by `OverlayV1Market` function: `enterOI`
     /// @param _isLong If open interest is adding to the long or short side.
     /// @param _openInterest Open interest to add.
     /// @param _oiCap Open interest cap to require not to be breached.
@@ -194,7 +204,7 @@ contract OverlayV1OI {
     /// @return oiLongShares_ Current open interest shares on the long side.
     /// @return oiShortShares_ Current open interest shares on the short side.
     function _oi (
-        uint _compoundings
+        uint32 _compoundings
     ) internal view returns (
         uint oiLong_,
         uint oiShort_,
@@ -226,22 +236,12 @@ contract OverlayV1OI {
     /// @return oiShort_ Current open interest on short side.
     /// @return oiLongShares_ Current open interest shares on the long side.
     /// @return oiShortShares_ Current open interest shares on the short side.
-    function oi () public view returns (
+    function oi() public view virtual returns (
         uint oiLong_,
         uint oiShort_,
         uint oiLongShares_,
         uint oiShortShares_
-    ) {
-
-        ( uint _compoundings, ) = epochs(block.timestamp, compounded);
-
-        (   oiLong_,
-            oiShort_,
-            oiLongShares_,
-            oiShortShares_ ) = _oi(_compoundings);
-
-    }
-
+    );
 
     /// @notice The current open interest on the long side.
     /// @return oiLong_ The current open interest on the long side.
